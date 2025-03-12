@@ -8,4 +8,4 @@ RUN pip install --upgrade pip \
 	&& pip install --no-cache-dir -r /opt/airflow/requirements.txt
 RUN python -m venv dbt_venv \
 	&& source dbt_venv/bin/activate \
-	&& PIP_USER=false pip install --no-cache-dir dbt-trino
+	&& PIP_USER=false pip install --no-cache-dir dbt-core dbt-dremio

@@ -57,8 +57,8 @@ x-airflow-common:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor # Change to LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
-    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+    # AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+    # AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
     AIRFLOW__CORE__FERNET_KEY: ''
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'true'
@@ -84,8 +84,10 @@ x-airflow-common:
   # >>> End
   depends_on:
     &airflow-common-depends-on
-    redis:
-      condition: service_healthy
+    # === Remove redis depends_on
+    # redis:
+    #   condition: service_healthy
+    # >>> End
     postgres:
       condition: service_healthy
 
@@ -97,7 +99,7 @@ services:
       POSTGRES_PASSWORD: airflow
       POSTGRES_DB: airflow
     volumes:
-      - ./postgres-db-volume:/var/lib/postgresql/data
+      - postgres-db-volume:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 10s
@@ -105,19 +107,21 @@ services:
       start_period: 5s
     restart: always
 
+  # === Remove redis service
   # redis:
-  #   # Redis is limited to 7.2-bookworm due to licencing change
-  #   # https://redis.io/blog/redis-adopts-dual-source-available-licensing/
-  #   image: redis:7.2-bookworm
-  #   expose:
-  #     - 6379
-  #   healthcheck:
-  #     test: ["CMD", "redis-cli", "ping"]
-  #     interval: 10s
-  #     timeout: 30s
-  #     retries: 50
-  #     start_period: 30s
-  #   restart: always
+    # Redis is limited to 7.2-bookworm due to licencing change
+    # https://redis.io/blog/redis-adopts-dual-source-available-licensing/
+    # image: redis:7.2-bookworm
+    # expose:
+    #   - 6379
+    # healthcheck:
+    #   test: ["CMD", "redis-cli", "ping"]
+    #   interval: 10s
+    #   timeout: 30s
+    #   retries: 50
+    #   start_period: 30s
+    # restart: always
+  # >>> END
 
   airflow-webserver:
     <<: *airflow-common
@@ -293,17 +297,17 @@ services:
   # >>> End
 
   # === Add services
-  trino:
-    image: trinodb/trino:latest
+  dremio:
+    platform: linux/x86_64
+    image: dremio/dremio-oss:25.2
     ports:
-      - 8081:8080
-    container_name: trino
-    environment:
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
-      MINIO_REGION: ${MINIO_REGION}
+      - 9047:9047
+      - 31010:31010
+      - 32010:32010
+    container_name: dremio
     volumes:
-      - ./trino_etc:/etc/trino
+      - dremio_data:/opt/dremio/data
+      - dremio_logs:/opt/dremio/logs
 
   minioserver:
     image: minio/minio
@@ -316,15 +320,13 @@ services:
     container_name: minioserver
     command: server /data --console-address ":9001"
     volumes:
-      - ./minio_data:/data
+      - minio_data:/data
 
   nessie:
     image: projectnessie/nessie
     container_name: nessie
     ports:
       - "19120:19120"
-    volumes:
-      - ./nessie_data:/var/lib/nessie
   # >>> End
 
 # === Add Network
@@ -340,4 +342,6 @@ volumes:
   trino_etc:
   nessie_data:
   postgres-db-volume:
+  dremio_data:
+  dremio_logs:
 # >>> End
