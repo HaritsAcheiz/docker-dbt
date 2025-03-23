@@ -80,7 +80,9 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR}/logs:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR}/plugins:/opt/airflow/plugins
-  user: "${AIRFLOW_UID:-50000}:0"
+    - ${AIRFLOW_PROJ_DIR}/dbt:/opt/airflow/dbt
+    - ~/.dbt:/root/.dbt
+  user: "${AIRFLOW_UID:-50000}:${AIRFLOW_UID:-50000}"
   # >>> End
   depends_on:
     &airflow-common-depends-on
@@ -305,28 +307,49 @@ services:
       - 31010:31010
       - 32010:32010
     container_name: dremio
+    environment:
+      - DREMIO_JAVA_SERVER_EXTRA_OPTS=-Dpaths.dist=file:///opt/dremio/data/dist
     volumes:
-      - dremio_data:/opt/dremio/data
-      - dremio_logs:/opt/dremio/logs
+      - dremio-data:/opt/dremio/data
+      - dremio-conf:/opt/dremio/conf
 
   minioserver:
     image: minio/minio
     ports:
       - 9000:9000
       - 9001:9001
+    container_name: minioserver
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    container_name: minioserver
-    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    entrypoint: >
+      /bin/sh -c "
+      minio server /data --console-address ':9001' &
+      sleep 5;
+      mc alias set myminio http://localhost:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
+      mc mb myminio/datalake;
+      mc mb myminio/warehouse;
+      tail -f /dev/null"
     volumes:
-      - minio_data:/data
+      - minio-data:/data
 
   nessie:
-    image: projectnessie/nessie
+    image: projectnessie/nessie:latest
     container_name: nessie
     ports:
-      - "19120:19120"
+      - "19120:19120"  # Expose Nessie API port
+    environment:
+      - QUARKUS_PROFILE=prod
+      - QUARKUS_HTTP_PORT=19120
+      - QUARKUS_LOG_CONSOLE_FORMAT=%d{yyyy-MM-dd HH:mm:ss} %-5p [%c{1.}] (%t) %s%e%n
+      - QUARKUS_LOG_LEVEL=INFO
+    volumes:
+      - nessie-data:/nessie/data  # Mount local directory to persist RocksDB data
   # >>> End
 
 # === Add Network
@@ -338,10 +361,9 @@ networks:
 
 # === Add Volumes
 volumes:
-  minio_data:
-  trino_etc:
-  nessie_data:
+  minio-data:
+  nessie-data:
+  dremio-data:
+  dremio-conf:
   postgres-db-volume:
-  dremio_data:
-  dremio_logs:
 # >>> End
